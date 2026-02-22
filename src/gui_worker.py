@@ -27,7 +27,8 @@ class OCRWorker(QThread):
     def __init__(self, queue: list[str], output_dir: str, lang: str, 
                  enable_classification: bool, hot_folder: str = None, 
                  det_model: Path = None, rec_models_dir: Path = None, 
-                 dict_models_dir: Path = None, nlp_model_dir: Path = None, rules_path: Path = None, parent=None):
+                 dict_models_dir: Path = None, nlp_model_dir: Path = None, rules_path: Path = None, 
+                 hw_device: str = "Auto", parent=None):
         super().__init__(parent)
         self.queue = queue
         self.output_dir = Path(output_dir) if output_dir else None
@@ -41,6 +42,7 @@ class OCRWorker(QThread):
         
         self.nlp_model_dir = nlp_model_dir
         self.rules_path = rules_path
+        self.hw_device = hw_device
         
         self._is_running = True
 
@@ -54,7 +56,7 @@ class OCRWorker(QThread):
         try:
             # Reconstruct the models_dir structure conceptually
             models_dir = self.det_model.parent if self.det_model else None
-            engine = PaddleOcrEngine(str(models_dir))
+            engine = PaddleOcrEngine(str(models_dir), device=self.hw_device)
             engine.load_recognizer(self.lang)
             
             classifier = None

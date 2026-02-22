@@ -39,9 +39,12 @@ class PaddleOcrEngine:
     Supports dynamic language switching for the Recognition model.
     Converted to Intel OpenVINO.
     """
-    def __init__(self, models_dir: str):
+    def __init__(self, models_dir: str, device: str = "Auto"):
         self.models_dir = Path(models_dir)
-        self.device = get_optimal_device()
+        if device in ["CPU", "GPU"]:
+            self.device = device
+        else:
+            self.device = get_optimal_device()
         self.core = ov.Core()
         
         # Performance properties for OpenVINO (only applicable to CPU)

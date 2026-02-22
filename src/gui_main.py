@@ -118,8 +118,15 @@ class ConfigPanel(QGroupBox):
             "ch (簡體中文+英)", "chinese_cht (繁體中文+英)", 
             "japan (日+英)", "korean (韓+英)", "latin (拉丁語系)", "en (純正英文)"
         ])
+        
+        self.hw_lbl = QLabel("運算硬體:")
+        self.hw_combo = QComboBox()
+        self.hw_combo.addItems(["Auto", "GPU", "CPU"])
+        
         row2.addWidget(self.lang_lbl)
-        row2.addWidget(self.lang_combo, 1)
+        row2.addWidget(self.lang_combo, 2)
+        row2.addWidget(self.hw_lbl)
+        row2.addWidget(self.hw_combo, 1)
         layout.addLayout(row2)
         
         # NLP and UI Features
@@ -234,6 +241,10 @@ class MainWindow(QMainWindow):
         if lang_idx < self.config_panel.lang_combo.count():
             self.config_panel.lang_combo.setCurrentIndex(lang_idx)
             
+        hw_idx = int(self.settings.value("hw_index", 0))
+        if hw_idx < self.config_panel.hw_combo.count():
+            self.config_panel.hw_combo.setCurrentIndex(hw_idx)
+            
         monitor_on = self.settings.value("monitor_enabled", "false") == "true"
         self.config_panel.monitor_chk.setChecked(monitor_on)
         # Checkbox toggle will automatically trigger thread start if True
@@ -245,6 +256,7 @@ class MainWindow(QMainWindow):
         self.settings.setValue("hot_folder", self.config_panel.hf_input.text())
         self.settings.setValue("enable_nlp", self.config_panel.nlp_chk.isChecked())
         self.settings.setValue("lang_index", self.config_panel.lang_combo.currentIndex())
+        self.settings.setValue("hw_index", self.config_panel.hw_combo.currentIndex())
         self.settings.setValue("monitor_enabled", self.config_panel.monitor_chk.isChecked())
         event.accept()
 
@@ -326,6 +338,7 @@ class MainWindow(QMainWindow):
             items.append(text)
             
         lang_str = self.config_panel.lang_combo.currentText().split(" ")[0]
+        hw_str = self.config_panel.hw_combo.currentText()
         
         # Resolution of absolute static paths for PyInstaller MEIPASS
         det_path = get_resource_path("models/det.onnx")
@@ -352,6 +365,7 @@ class MainWindow(QMainWindow):
             dict_models_dir=dict_dir,
             nlp_model_dir=nlp_dir,
             rules_path=rules_path,
+            hw_device=hw_str,
             parent=self
         )
         
