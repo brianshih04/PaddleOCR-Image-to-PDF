@@ -98,6 +98,8 @@ class OCRWorker(QThread):
                         
                     self.log_emitted.emit(f"Parsing page {i+1}/{total_pages}...")
                     
+                    page_start_time = time.perf_counter()
+                    
                     polygons = engine.detect_text_polygons(page.image_rgb)
                     
                     page_text = []
@@ -124,6 +126,10 @@ class OCRWorker(QThread):
                                 page_text.append(text)
                                 
                     pdf_gen.add_page(page.image_rgb, extracted_blocks)
+                    
+                    page_end_time = time.perf_counter()
+                    elapsed = page_end_time - page_start_time
+                    self.log_emitted.emit(f"Page {i+1} completed in {elapsed:.2f}s")
                     
                     # Accumulate text for classification (limited to sensible amounts)
                     if len(full_text_buffer) < 2000:
