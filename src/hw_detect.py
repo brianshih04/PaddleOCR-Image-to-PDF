@@ -8,7 +8,7 @@ logger = logging.getLogger(__name__)
 EP_PRIORITY_LIST = [
     'TensorrtExecutionProvider',
     'CUDAExecutionProvider',
-    'DirectMLExecutionProvider',
+    'DmlExecutionProvider',
     'CPUExecutionProvider'
 ]
 
