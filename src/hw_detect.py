@@ -1,34 +1,25 @@
 import logging
 import psutil
-import onnxruntime as ort
+import openvino as ov
 
 logger = logging.getLogger(__name__)
 
-# Strict order of priority for Execution Providers
-EP_PRIORITY_LIST = [
-    'TensorrtExecutionProvider',
-    'CUDAExecutionProvider',
-    'DmlExecutionProvider',
-    'CPUExecutionProvider'
-]
-
-def get_optimal_providers() -> list[str]:
+def get_optimal_device() -> str:
     """
-    Returns the optimal list of execution providers available on the current machine
-    based on the strict priority list.
+    Returns the optimal device available on the current machine using OpenVINO Core.
+    Prioritizes Intel GPU if available, else falls back to CPU.
     """
-    available_providers = ort.get_available_providers()
-    logger.debug(f"ORT Available Providers: {available_providers}")
+    core = ov.Core()
+    available_devices = core.available_devices
+    logger.debug(f"OpenVINO Available Devices: {available_devices}")
     
-    # Filter the priority list so we only request what is actually available 
-    # and strictly in the order we defined.
-    optimal_providers = [ep for ep in EP_PRIORITY_LIST if ep in available_providers]
-    
-    if 'CPUExecutionProvider' not in optimal_providers:
-        optimal_providers.append('CPUExecutionProvider')
+    # Simple priority logic
+    if 'CPU' in available_devices:
+        logger.info("Selected OpenVINO Device: CPU (GPU disabled due to severe dynamic shape latency)")
+        return 'CPU'
         
-    logger.info(f"Selected ORT Execution Providers: {optimal_providers}")
-    return optimal_providers
+    # Fallback standard
+    return 'CPU'
 
 def get_physical_cpu_cores() -> int:
     """
