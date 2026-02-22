@@ -61,7 +61,9 @@ class OCRWorker(QThread):
             if self.enable_classification:
                 classifier = DocumentClassifier(str(self.rules_path), str(self.nlp_model_dir))
                 
-            self.log_emitted.emit(f"Engine Ready. Found {len(self.queue)} files.")
+            active_hw = engine.get_active_provider()
+            self.log_emitted.emit(f"Engine Ready. Hardware Accelerator: [{active_hw}]")
+            self.log_emitted.emit(f"Found {len(self.queue)} files to process.")
         except Exception as e:
             self.log_emitted.emit(f"[ERROR] Engine Init Failed: {str(e)}")
             self.task_finished.emit(False)

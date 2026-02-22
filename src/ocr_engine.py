@@ -83,6 +83,10 @@ class PaddleOcrEngine:
             
         self.det_session = create_session(det_path, self.providers) if det_path.exists() else None
         self.det_input_name = self.det_session.get_inputs()[0].name if self.det_session else None
+        self.active_provider = self.det_session.get_providers()[0] if self.det_session else "None"
+        
+    def get_active_provider(self) -> str:
+        return self.active_provider
         
         # Recognition state
         self.rec_session = None
@@ -229,45 +233,70 @@ class PaddleOcrEngine:
             
         return polys
         
-    def recognize_text(self, cropped_image: np.ndarray) -> tuple[str, float]:
+    def recognize_text_batch(self, cropped_images: list[np.ndarray], batch_size: int = 6) -> list[tuple[str, float]]:
         """
-        Stage 2b: Text Recognition (SVTR_LCNet) applied to a perspectively wrapped crop.
+        Stage 2b: Text Recognition (SVTR_LCNet) batched inference.
         """
-        if self.rec_session is None:
-            return "", 0.0
+        if self.rec_session is None or not cropped_images:
+            return [("", 0.0)] * len(cropped_images)
             
         import math
-        h, w = cropped_image.shape[:2]
-        if h == 0 or w == 0:
-            return "", 0.0
+        results = []
+        
+        for i in range(0, len(cropped_images), batch_size):
+            batch_crops = cropped_images[i:i+batch_size]
+            max_w = 1
+            processed_crops = []
             
-        # Calculate dynamic width to maintain aspect ratio with H=48
-        ratio = w / float(h)
-        new_w = max(int(math.ceil(48 * ratio)), 1)
-        
-        # Standardize Recognition shape (H=48, W=dynamic)
-        rec_input = preprocess_image_to_tensor(cropped_image, (48, new_w))
-        
-        # ORT Inference
-        pred = self.rec_session.run(None, {self.rec_input_name: rec_input})[0]
-        
-        # CTC Decoding
-        preds_idx = pred.argmax(axis=2)[0]
-        preds_prob = pred.max(axis=2)[0]
-        
-        text = ""
-        confs = []
-        for i in range(len(preds_idx)):
-            idx = preds_idx[i]
-            # 0 is usually the blank token in ppocr_keys_v1.txt mapped char lists
-            if idx == 0 or idx >= len(self.char_list):
-                continue
-            if i > 0 and idx == preds_idx[i - 1]:
+            for crop in batch_crops:
+                h, w = crop.shape[:2]
+                if h == 0 or w == 0:
+                    processed_crops.append(None)
+                    continue
+                    
+                ratio = w / float(h)
+                new_w = max(int(math.ceil(48 * ratio)), 1)
+                max_w = max(max_w, new_w)
+                
+                tensor = preprocess_image_to_tensor(crop, (48, new_w))
+                processed_crops.append(tensor)
+                
+            batch_tensor = np.zeros((len(batch_crops), 3, 48, max_w), dtype=np.float32)
+            valid_indices = []
+            
+            for j, tensor in enumerate(processed_crops):
+                if tensor is not None:
+                    c_w = tensor.shape[3]
+                    batch_tensor[j, :, :, :c_w] = tensor[0] # copy and implicitly pad right with 0s
+                    valid_indices.append(j)
+                    
+            if not valid_indices:
+                results.extend([("", 0.0)] * len(batch_crops))
                 continue
                 
-            text += self.char_list[idx]
-            confs.append(float(preds_prob[i]))
+            pred = self.rec_session.run(None, {self.rec_input_name: batch_tensor})[0]
             
-        conf = sum(confs) / len(confs) if confs else 0.0
-        
-        return text, conf
+            for j in range(len(batch_crops)):
+                if j not in valid_indices:
+                    results.append(("", 0.0))
+                    continue
+                    
+                preds_idx = pred[j].argmax(axis=1)
+                preds_prob = pred[j].max(axis=1)
+                
+                text = ""
+                confs = []
+                for k in range(len(preds_idx)):
+                    idx = preds_idx[k]
+                    if idx == 0 or idx >= len(self.char_list):
+                        continue
+                    if k > 0 and idx == preds_idx[k - 1]:
+                        continue
+                        
+                    text += self.char_list[idx]
+                    confs.append(float(preds_prob[k]))
+                    
+                conf = sum(confs) / len(confs) if confs else 0.0
+                results.append((text, conf))
+                
+        return results

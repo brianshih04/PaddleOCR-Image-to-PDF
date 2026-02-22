@@ -145,7 +145,8 @@ class ConfigPanel(QGroupBox):
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("PaddleOCR-Engine: Offline Searchable PDF Factory")
+        self.version = "v0.51"
+        self.setWindowTitle(f"PaddleOCR-Engine {self.version}: Offline Searchable PDF Factory")
         self.setMinimumSize(800, 600)
         self.setAcceptDrops(True)
         
