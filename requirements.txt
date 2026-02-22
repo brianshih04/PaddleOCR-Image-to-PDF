@@ -1,7 +1,8 @@
 # paddleocr-engine dependencies
 # Strictly no paddlepaddle or torch
 
-onnxruntime>=1.16.0
+# Core Inference Engine (DirectML for Intel / AMD GPUs)
+onnxruntime-directml>=1.16.0
 opencv-python-headless>=4.8.0
 PyMuPDF>=1.25.0
 numpy>=1.24.0
