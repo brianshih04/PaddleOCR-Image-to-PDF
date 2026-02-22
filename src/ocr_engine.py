@@ -1,51 +1,12 @@
 import logging
 import numpy as np
 import cv2
-import onnxruntime as ort
+import openvino as ov
 from pathlib import Path
 
-from hw_detect import get_optimal_providers, get_physical_cpu_cores
+from hw_detect import get_optimal_device, get_physical_cpu_cores
 
 logger = logging.getLogger(__name__)
-
-
-def create_session(model_path: str | Path, providers: list[str]) -> ort.InferenceSession:
-    """
-    Initializes an ONNX Runtime InferenceSession with strictly controlled
-    memory and thread parameters to ensure predictable performance and bounded VRAM.
-    """
-    model_path = str(model_path)
-    
-    # Session Options Configuration
-    sess_opts = ort.SessionOptions()
-    
-    # 1. Enable full graph optimizations
-    sess_opts.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
-    
-    # 2. Memory allocation strategy for GPU
-    # GPUs perform terribly if they have to constantly reallocate VRAM for variable-sized tensors.
-    # We enable Arena allocator to cache memory blocks instead of allocating dynamically.
-    sess_opts.enable_mem_pattern = True
-    sess_opts.enable_mem_reuse = True
-    
-    # Disable dynamic block base as it severely impacts DirectML performance on Windows
-    # sess_opts.add_session_config_entry("session.dynamic_block_base", "4")
-    
-    # 3. CPU execution threading - avoid logical core over-subscription
-    physical_cores = get_physical_cpu_cores()
-    sess_opts.intra_op_num_threads = physical_cores
-    
-    # For GPU acceleration, parallel execution mode manages ops better across hardware queues
-    sess_opts.execution_mode = ort.ExecutionMode.ORT_PARALLEL if "DmlExecutionProvider" in providers else ort.ExecutionMode.ORT_SEQUENTIAL
-    
-    logger.info(f"Loading ONNX model from: {model_path}")
-    logger.debug(f"ORT Session intra_op_threads: {physical_cores}")
-    
-    session = ort.InferenceSession(model_path, sess_options=sess_opts, providers=providers)
-    
-    # Validate actual applied providers
-    logger.debug(f"Model executed by providers: {session.get_providers()}")
-    return session
 
 
 def preprocess_image_to_tensor(img: np.ndarray, shape: tuple[int, int]) -> np.ndarray:
@@ -76,23 +37,33 @@ class PaddleOcrEngine:
     """
     Dual-stage high-speed inference wrapper for DBNet Detection and SVTR_LCNet Recognition models.
     Supports dynamic language switching for the Recognition model.
+    Converted to Intel OpenVINO.
     """
     def __init__(self, models_dir: str):
         self.models_dir = Path(models_dir)
-        self.providers = get_optimal_providers()
+        self.device = get_optimal_device()
+        self.core = ov.Core()
+        
+        # Performance properties for OpenVINO (only applicable to CPU)
+        if self.device == 'CPU':
+            self.core.set_property(self.device, {"INFERENCE_NUM_THREADS": get_physical_cpu_cores()})
         
         # Load Detection (DBNet) - Language Independent
         det_path = self.models_dir / "det.onnx"
         if not det_path.exists():
             logger.warning(f"Detection model not found at {det_path}")
+            self.det_compiled = None
+            self.active_provider = "None"
+        else:
+            logger.info(f"Loading Detection model: {det_path}")
+            model_det = self.core.read_model(str(det_path))
+            self.det_compiled = self.core.compile_model(model_det, device_name=self.device)
+            self.active_provider = self.device
             
-        self.det_session = create_session(det_path, self.providers) if det_path.exists() else None
-        self.det_input_name = self.det_session.get_inputs()[0].name if self.det_session else None
-        self.active_provider = self.det_session.get_providers()[0] if self.det_session else "None"
         
         # Recognition state
-        self.rec_session = None
-        self.rec_input_name = None
+        self.rec_compiled = None
+        self.rec_input_tensor = None
         self.char_list = []
         self.current_lang = None
         
@@ -104,15 +75,15 @@ class PaddleOcrEngine:
         Dynamically loads the recognition model and dictionary for the specified language.
         Destroys the previous session to free VRAM.
         """
-        if lang == self.current_lang and self.rec_session is not None:
+        if lang == self.current_lang and self.rec_compiled is not None:
             return # Already loaded
             
         logger.info(f"Switching OCR Recognizer to language: {lang}")
         
         # 1. Destroy existing session to free memory
-        if self.rec_session is not None:
-            del self.rec_session
-            self.rec_session = None
+        if self.rec_compiled is not None:
+            del self.rec_compiled
+            self.rec_compiled = None
             
         import gc
         gc.collect()
@@ -154,9 +125,18 @@ class PaddleOcrEngine:
                 return self.load_recognizer("ch")
             return
             
-        # 3. Load new session
-        self.rec_session = create_session(rec_model_path, self.providers)
-        self.rec_input_name = self.rec_session.get_inputs()[0].name
+        # 3. Load new session via OpenVINO
+        rec_model = self.core.read_model(str(rec_model_path))
+        
+        # Configure dynamic shapes to optimize Intel GPU caching across variable batch sizes and text lengths.
+        # Input tensor format: [N, C, H, W] -> typically [Batch, 3, 48, Width]
+        shapes = rec_model.input(0).get_partial_shape()
+        shapes[0] = -1 # Dynamic Batch (N)
+        shapes[3] = -1 # Dynamic Width (W)
+        rec_model.reshape({rec_model.input(0): shapes})
+        
+        self.rec_compiled = self.core.compile_model(rec_model, device_name=self.device)
+        self.rec_input_tensor = self.rec_compiled.input(0)
         
         # 4. Load Dictionary
         if dict_path.exists():
@@ -180,7 +160,7 @@ class PaddleOcrEngine:
         Stage 2a: Text Detection (DBNet).
         Outputs four-point polygon coordinates: [[x1, y1], [x2, y2], [x3, y3], [x4, y4]]
         """
-        if self.det_session is None:
+        if self.det_compiled is None:
             return []
             
         # Dynamic resizing to nearest multiples of 32 for DBNet
@@ -190,8 +170,8 @@ class PaddleOcrEngine:
         
         det_input = preprocess_image_to_tensor(image_rgb, (new_h, new_w))
         
-        # ORT Inference
-        pred = self.det_session.run(None, {self.det_input_name: det_input})[0]
+        # OpenVINO Inference
+        pred = self.det_compiled([det_input])[self.det_compiled.output(0)]
         
         prob_map = pred[0, 0, :, :]
         
@@ -242,7 +222,7 @@ class PaddleOcrEngine:
         """
         Stage 2b: Text Recognition (SVTR_LCNet) batched inference.
         """
-        if self.rec_session is None or not cropped_images:
+        if self.rec_compiled is None or not cropped_images:
             return [("", 0.0)] * len(cropped_images)
             
         import math
@@ -266,8 +246,9 @@ class PaddleOcrEngine:
                 processed_crops.append((new_w, tensor))
                 max_w = max(max_w, new_w)
                 
-            # DirectML Optimization: Pad max_w to the nearest static bin to avoid memory reallocation
-            # Standard bins for PP-OCR: 64, 128, 192, 256, 320, 384, 448, 512, 768, 1024
+            # OpenVINO GPU Static Caching Optimization
+            # Intel Iris Xe OpenCL kernels take too long to dynamically compile for every unique word length.
+            # We quantize the width into static 64-pixel bins to guarantee >99% kernel cache hits.
             bin_size = 64
             padded_max_w = ((max_w + bin_size - 1) // bin_size) * bin_size
             
@@ -284,7 +265,7 @@ class PaddleOcrEngine:
                 results.extend([("", 0.0)] * len(batch_crops))
                 continue
                 
-            pred = self.rec_session.run(None, {self.rec_input_name: batch_tensor})[0]
+            pred = self.rec_compiled([batch_tensor])[self.rec_compiled.output(0)]
             
             for j in range(len(batch_crops)):
                 if j not in valid_indices:
