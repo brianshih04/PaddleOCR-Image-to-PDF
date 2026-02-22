@@ -1,0 +1,9 @@
+
+Pixmap(colorspace, irect, alpha) - empty pixmap.
+Pixmap(colorspace, src) - copy changing colorspace.
+Pixmap(src, width, height,[clip]) - scaled copy, float dimensions.
+Pixmap(src, alpha=1) - copy and add or drop alpha channel.
+Pixmap(filename) - from an image in a file.
+Pixmap(image) - from an image in memory (bytes).
+Pixmap(colorspace, width, height, samples, alpha) - from samples data.
+Pixmap(PDFdoc, xref) - from an image at xref in a PDF document.

@@ -1,0 +1,43 @@
+__pycache__/
+*.py[cod]
+*$py.class
+
+# PyInstaller
+build/
+dist/
+*.spec
+
+# Models
+models/*.onnx
+models/rec/*.onnx
+models/nlp/*.onnx
+models/nlp/*.json
+models/dict/*.txt
+
+# Environments
+.env
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# User Settings and Logs
+config.ini
+*.log
+
+# IDEs
+.vscode/
+.idea/
+
+# Local Test Files
+*.pdf
+*.jpg
+*.jpeg
+*.png
+*.bmp
+*.tiff
+*.tif
+_Backup/
+_Error/
