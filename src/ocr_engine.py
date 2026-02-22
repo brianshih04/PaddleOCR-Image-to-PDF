@@ -261,18 +261,23 @@ class PaddleOcrEngine:
                     
                 ratio = w / float(h)
                 new_w = max(int(math.ceil(48 * ratio)), 1)
-                max_w = max(max_w, new_w)
                 
                 tensor = preprocess_image_to_tensor(crop, (48, new_w))
-                processed_crops.append(tensor)
+                processed_crops.append((new_w, tensor))
+                max_w = max(max_w, new_w)
                 
-            batch_tensor = np.zeros((len(batch_crops), 3, 48, max_w), dtype=np.float32)
+            # DirectML Optimization: Pad max_w to the nearest static bin to avoid memory reallocation
+            # Standard bins for PP-OCR: 64, 128, 192, 256, 320, 384, 448, 512, 768, 1024
+            bin_size = 64
+            padded_max_w = ((max_w + bin_size - 1) // bin_size) * bin_size
+            
+            batch_tensor = np.zeros((len(batch_crops), 3, 48, padded_max_w), dtype=np.float32)
             valid_indices = []
             
-            for j, tensor in enumerate(processed_crops):
-                if tensor is not None:
-                    c_w = tensor.shape[3]
-                    batch_tensor[j, :, :, :c_w] = tensor[0] # copy and implicitly pad right with 0s
+            for j, data in enumerate(processed_crops):
+                if data is not None:
+                    c_w, tensor = data
+                    batch_tensor[j, :, :, :c_w] = tensor[0] # copy and implicitly pad right with zeros
                     valid_indices.append(j)
                     
             if not valid_indices:
