@@ -22,16 +22,21 @@ def create_session(model_path: str | Path, providers: list[str]) -> ort.Inferenc
     # 1. Enable full graph optimizations
     sess_opts.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
     
-    # 2. Control memory allocation strategy (kSameAsRequested essentially prevents excessive Arena Growth)
-    # We use session config entries to bind dynamic block base.
-    sess_opts.add_session_config_entry("session.dynamic_block_base", "4")
+    # 2. Memory allocation strategy for GPU
+    # GPUs perform terribly if they have to constantly reallocate VRAM for variable-sized tensors.
+    # We enable Arena allocator to cache memory blocks instead of allocating dynamically.
+    sess_opts.enable_mem_pattern = True
+    sess_opts.enable_mem_reuse = True
+    
+    # Disable dynamic block base as it severely impacts DirectML performance on Windows
+    # sess_opts.add_session_config_entry("session.dynamic_block_base", "4")
     
     # 3. CPU execution threading - avoid logical core over-subscription
     physical_cores = get_physical_cpu_cores()
     sess_opts.intra_op_num_threads = physical_cores
     
-    # If the user specifically configures sequential execution instead of parallel
-    sess_opts.execution_mode = ort.ExecutionMode.ORT_SEQUENTIAL
+    # For GPU acceleration, parallel execution mode manages ops better across hardware queues
+    sess_opts.execution_mode = ort.ExecutionMode.ORT_PARALLEL if "DmlExecutionProvider" in providers else ort.ExecutionMode.ORT_SEQUENTIAL
     
     logger.info(f"Loading ONNX model from: {model_path}")
     logger.debug(f"ORT Session intra_op_threads: {physical_cores}")
