@@ -85,14 +85,14 @@ class PaddleOcrEngine:
         self.det_input_name = self.det_session.get_inputs()[0].name if self.det_session else None
         self.active_provider = self.det_session.get_providers()[0] if self.det_session else "None"
         
-    def get_active_provider(self) -> str:
-        return self.active_provider
-        
         # Recognition state
         self.rec_session = None
         self.rec_input_name = None
         self.char_list = []
         self.current_lang = None
+        
+    def get_active_provider(self) -> str:
+        return self.active_provider
         
     def load_recognizer(self, lang: str):
         """
