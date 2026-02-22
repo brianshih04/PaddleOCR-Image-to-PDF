@@ -100,6 +100,8 @@ class OCRWorker(QThread):
                     
                     page_text = []
                     extracted_blocks = []
+                    crop_list = []
+                    bbox_list = []
                     
                     for poly in polygons:
                         x_min, y_min, x_max, y_max = CoordMapper.polygon_to_orthogonal_bbox(poly)
@@ -109,9 +111,14 @@ class OCRWorker(QThread):
                         
                         cropped = page.image_rgb[y0:y1, x0:x1]
                         if min(cropped.shape[:2]) > 0:
-                            text, conf = engine.recognize_text(cropped)
+                            crop_list.append(cropped)
+                            bbox_list.append((x_min, y_min, x_max, y_max))
+                            
+                    if crop_list:
+                        batch_results = engine.recognize_text_batch(crop_list, batch_size=12)
+                        for (text, conf), bbox in zip(batch_results, bbox_list):
                             if text.strip() != "":
-                                extracted_blocks.append((text, (x_min, y_min, x_max, y_max)))
+                                extracted_blocks.append((text, bbox))
                                 page_text.append(text)
                                 
                     pdf_gen.add_page(page.image_rgb, extracted_blocks)

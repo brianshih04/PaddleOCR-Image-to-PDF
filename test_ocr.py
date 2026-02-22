@@ -1,36 +1,40 @@
-import fitz
+import cv2
+import sys
+from pathlib import Path
+from src.ocr_engine import PaddleOcrEngine
 
 def main():
-    doc = fitz.open()
-    page = doc.new_page(width=500, height=200)
+    base_dir = Path(__file__).parent
+    engine = PaddleOcrEngine(str(base_dir / "models"))
+    engine.load_recognizer("ch")
     
-    text = "System 2 Thinking"
+    from src.rasterizer import load_data
+    test_pdf = base_dir.parent / "glm-ocr-engine" / "1.pdf"
+    pages = load_data(str(test_pdf), dpi=300)
+    img = pages[0].image_rgb
     
-    x0, y0, x1, y1 = 50, 50, 450, 100
-    box_w = x1 - x0
-    box_h = y1 - y0
+    polys = engine.detect_text_polygons(img)
+    print(f"Found {len(polys)} polygons.")
     
-    tw = fitz.TextWriter(page.rect)
-    font = fitz.Font("cjk")
-    fontsize = box_h * 0.8
+    if not polys:
+        return
+        
+    crop_list = []
     
-    tl = font.text_length(text, fontsize=fontsize)
-    tl = max(tl, 1)
-    
-    ratio = box_w / tl
-    
-    pt = fitz.Point(x0, y1 - box_h * 0.2)
-    
-    tw.append(pt, text, font=font, fontsize=fontsize)
-    
-    mat = fitz.Matrix(ratio, 0, 0, 1, 0, 0)
-    tw.write_text(page, render_mode=0, morph=(pt, mat)) # render_mode=0 to verify visually
-    
-    # Draw bbox for reference
-    page.draw_rect(fitz.Rect(x0, y0, x1, y1), color=(1,0,0), width=1)
-    
-    doc.save("test_stretch.pdf")
-    print("test_stretch.pdf saved")
+    from src.coord_mapper import CoordMapper
+    for i, poly in enumerate(polys[:5]):
+        x_min, y_min, x_max, y_max = CoordMapper.polygon_to_orthogonal_bbox(poly)
+        h, w = img.shape[:2]
+        y0, y1 = max(0, int(y_min)), min(h, int(y_max))
+        x0, x1 = max(0, int(x_min)), min(w, int(x_max))
+        cropped = img[y0:y1, x0:x1]
+        
+        crop_list.append(cropped)
+        cv2.imwrite(f"crop_{i}.jpg", cv2.cvtColor(cropped, cv2.COLOR_RGB2BGR))
+        
+    results = engine.recognize_text_batch(crop_list)
+    for i, (text, conf) in enumerate(results):
+        print(f"Crop {i} -> Text: '{text}' [Conf: {conf:.2f}]")
 
 if __name__ == "__main__":
     main()

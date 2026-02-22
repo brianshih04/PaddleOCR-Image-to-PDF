@@ -7,12 +7,12 @@ build/
 dist/
 *.spec
 
-# Models
-models/*.onnx
-models/rec/*.onnx
-models/nlp/*.onnx
-models/nlp/*.json
-models/dict/*.txt
+# Models (Tracked via Git LFS)
+#!models/*.onnx
+#!models/rec/*.onnx
+#!models/nlp/*.onnx
+#!models/nlp/*.json
+#!models/dict/*.txt
 
 # Environments
 .env
