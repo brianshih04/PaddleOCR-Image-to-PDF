@@ -52,23 +52,27 @@ class PDFReconstructor:
         # PyMuPDF doesn't explicitly have z-index, but operations run in order of draw.
         # render_mode=3 guarantees visibility is zero but selectable.
         for text, (x0, y0, x1, y1) in text_blocks:
-            text_rect = fitz.Rect(x0, y0, x1, y1)
-            
-            # Using Shape object for explicit text insertion styling
-            # fitz.insert_textbox automatically handles layout inside the rect, 
-            # we specify render_mode=3 via textwriter for precise control
+            box_w = max(x1 - x0, 1)
+            box_h = max(y1 - y0, 1)
             
             tw = fitz.TextWriter(page.rect)
-            # Create a transparent text
-            # render_mode: 0=Fill, 1=Stroke, 2=FillThenStroke, 3=Invisible
-            font = fitz.Font("cjk") # Fallback to builtin CJK
-            tw.append(
-                text_rect.bl, # Bottom left text origin (approximate)
-                text,
-                font=font,
-                fontsize=max(int(y1 - y0), 1) * 0.8 # Dynamic sizing
-            )
-            tw.write_text(page, render_mode=3) # Critical parameter: invisible text for selection
+            font = fitz.Font("cjk") # builtin CJK
+            fontsize = box_h * 0.8
+            
+            # Calculate geometric ratio to horizontally stretch text safely
+            tl = font.text_length(text, fontsize=fontsize)
+            tl = max(tl, 1)
+            ratio = float(box_w / tl)
+            
+            # Origin point mapped to approx text baseline
+            base_y = y1 - box_h * 0.15
+            pt = fitz.Point(x0, base_y)
+            
+            tw.append(pt, text, font=font, fontsize=fontsize)
+            
+            # Stretch horizontally using a Matrix
+            mat = fitz.Matrix(ratio, 0, 0, 1, 0, 0)
+            tw.write_text(page, render_mode=3, morph=(pt, mat)) # render_mode=3: invisible text
 
     def save(self, filepath: str | Path):
         """

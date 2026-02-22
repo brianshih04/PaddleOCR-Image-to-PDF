@@ -139,7 +139,10 @@ class PaddleOcrEngine:
         dict_path = self.models_dir / "dict" / dict_name
         
         if not rec_model_path.exists():
-            logger.error(f"Recognition model missing: {rec_model_path}")
+            logger.error(f"Recognition model missing: {rec_model_path}. Attempting to fallback to 'ch'.")
+            if lang != "ch":
+                self.current_lang = None
+                return self.load_recognizer("ch")
             return
             
         # 3. Load new session
@@ -182,9 +185,48 @@ class PaddleOcrEngine:
         pred = self.det_session.run(None, {self.det_input_name: det_input})[0]
         
         prob_map = pred[0, 0, :, :]
-        # TODO: Binarization, contour generation, Box clipping via pyclipper
         
-        polys = [] # Placeholder
+        # Binarization
+        mask = (prob_map > 0.3).astype(np.uint8) * 255
+        
+        # Contour generation
+        contours, _ = cv2.findContours(mask, cv2.RETR_LIST, cv2.CHAIN_APPROX_SIMPLE)
+        
+        import pyclipper
+        from shapely.geometry import Polygon
+        
+        polys = []
+        for contour in contours:
+            if contour.shape[0] < 4:
+                continue
+                
+            box = cv2.minAreaRect(contour)
+            points = cv2.boxPoints(box)
+            
+            poly = Polygon(points)
+            if not poly.is_valid or poly.area < 5 or poly.length == 0:
+                continue
+                
+            # Unclip (dilation) to get full text region
+            distance = poly.area * 1.5 / poly.length
+            offset = pyclipper.PyclipperOffset()
+            offset.AddPath(points.astype(int).tolist(), pyclipper.JT_ROUND, pyclipper.ET_CLOSEDPOLYGON)
+            expanded = offset.Execute(distance)
+            
+            if len(expanded) == 0:
+                continue
+                
+            expanded_points = np.array(expanded[0])
+            box = cv2.minAreaRect(expanded_points)
+            final_points = cv2.boxPoints(box)
+            
+            # Rescale points to original image
+            ratio_h = h / new_h
+            ratio_w = w / new_w
+            
+            scaled_points = [[float(pt[0] * ratio_w), float(pt[1] * ratio_h)] for pt in final_points]
+            polys.append(scaled_points)
+            
         return polys
         
     def recognize_text(self, cropped_image: np.ndarray) -> tuple[str, float]:
@@ -194,8 +236,17 @@ class PaddleOcrEngine:
         if self.rec_session is None:
             return "", 0.0
             
-        # Standardize Recognition shape (H=48, W=dynamic/320)
-        rec_input = preprocess_image_to_tensor(cropped_image, (48, 320))
+        import math
+        h, w = cropped_image.shape[:2]
+        if h == 0 or w == 0:
+            return "", 0.0
+            
+        # Calculate dynamic width to maintain aspect ratio with H=48
+        ratio = w / float(h)
+        new_w = max(int(math.ceil(48 * ratio)), 1)
+        
+        # Standardize Recognition shape (H=48, W=dynamic)
+        rec_input = preprocess_image_to_tensor(cropped_image, (48, new_w))
         
         # ORT Inference
         pred = self.rec_session.run(None, {self.rec_input_name: rec_input})[0]
@@ -205,7 +256,18 @@ class PaddleOcrEngine:
         preds_prob = pred.max(axis=2)[0]
         
         text = ""
-        conf = 0.0
-        # TODO: CTC Merge duplicate consecutive chars
+        confs = []
+        for i in range(len(preds_idx)):
+            idx = preds_idx[i]
+            # 0 is usually the blank token in ppocr_keys_v1.txt mapped char lists
+            if idx == 0 or idx >= len(self.char_list):
+                continue
+            if i > 0 and idx == preds_idx[i - 1]:
+                continue
+                
+            text += self.char_list[idx]
+            confs.append(float(preds_prob[i]))
+            
+        conf = sum(confs) / len(confs) if confs else 0.0
         
         return text, conf
