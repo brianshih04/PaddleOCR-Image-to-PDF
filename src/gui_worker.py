@@ -185,6 +185,13 @@ class OCRWorker(QThread):
                         self.log_emitted.emit(f"Deadlock avoided: Moved faulting file to {error_folder}")
                     except Exception as move_e:
                         self.log_emitted.emit(f"[CRITICAL] Could not move faulting file: {move_e}")
-                        
+                            
+        # Gracefully release C++ memory handlers inside the worker thread
+        if 'engine' in locals():
+            del engine
+        if 'classifier' in locals():
+            del classifier
+        gc.collect()
+        
         self.task_finished.emit(True)
         self.log_emitted.emit(">>> Queue Finished <<<")

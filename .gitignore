@@ -41,3 +41,7 @@ config.ini
 *.tif
 _Backup/
 _Error/
+
+# Build/Runtime logs
+hf_files.txt
+pyinstaller_log.txt
