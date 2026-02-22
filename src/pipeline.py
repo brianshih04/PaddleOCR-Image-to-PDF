@@ -50,6 +50,9 @@ def run_pipeline(
         logger.info(f"Detected {len(polygons)} text regions.")
         
         extracted_blocks = []
+        crop_list = []
+        bbox_list = []
+        
         for poly in polygons:
             # 3. Coordinate mapping
             x_min, y_min, x_max, y_max = CoordMapper.polygon_to_orthogonal_bbox(poly)
@@ -58,16 +61,18 @@ def run_pipeline(
             y0, y1 = max(0, int(y_min)), min(h, int(y_max))
             x0, x1 = max(0, int(x_min)), min(w, int(x_max))
             
-            # 2b. Cropping and Recognition
-            # Placeholder strict geometric cropping instead of actual perspective transform
+            # 2b. Cropping and Prepping
             cropped = page.image_rgb[y0:y1, x0:x1]
             if min(cropped.shape[:2]) > 0:
-                text, conf = ocr_engine.recognize_text(cropped)
+                crop_list.append(cropped)
+                bbox_list.append((x_min, y_min, x_max, y_max))
                 
-                # Append to block list for embedding
-                # 1:1 Scale
+        # Batch inference (much faster than sequential)
+        if crop_list:
+            batch_results = ocr_engine.recognize_text_batch(crop_list, batch_size=12)
+            for (text, conf), bbox in zip(batch_results, bbox_list):
                 if text.strip() != "":
-                    extracted_blocks.append((text, (x_min, y_min, x_max, y_max)))
+                    extracted_blocks.append((text, bbox))
         
         # 4. Synthesize final PDF structure via PyMuPDF 
         pdf_reconstructor.add_page(page.image_rgb, extracted_blocks)
