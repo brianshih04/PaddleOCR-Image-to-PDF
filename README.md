@@ -5,7 +5,8 @@
 
 ## ✨ 核心特色
 
-* **⚡ 超高速 OpenVINO 離線引擎**: 徹底拔除臃腫的 Python 機器學習框架 (如 PyTorch / PaddlePaddle)。直接使用 Intel 原生開發的 `openvino` 引擎，強制鎖定 **CPU 多核心並行解碼**（在動態張量長度裁切下，實測大勝 GPU 編譯效能，每頁僅需 ~3.5 秒），保證無損極速量產，且不挑顯示卡。
+* **⚡ 雙核 OCR 引擎架構**: 支援超高速的 **Intel OpenVINO (PaddleOCR)** 以及最新整合的 **GLM-OCR (0.9B)**。使用者可於介面上自由切換，根據速度與複雜文檔的辨識精度需求，選擇最佳的推論核心。
+* **💻 自由運算裝置切換**: 提供硬體加速選單，支援一鍵切換 `CPU`, `GPU (自動)`, `GPU.0 (內顯)`, `GPU.1 (獨顯)`。
 * **🔍 像素級精準的 Searchable PDF**: 整合 `PyMuPDF` 結合矩陣變換演算法，將辨識出的隱藏向量文字，精準映射並縮放拉伸至原始影像的像素座標上，確保游標選取或 Adobe Acrobat 搜尋時的絕對貼合對齊。
 * **🧠 NLP 雙軌自動分類引擎**: 內建自訂的「正規表示式 (Regex)」規則引擎，並搭載輕量級的 HuggingFace NLP 語意分析模型 (`MiniLM-L6-v2`)。掃描完成後自動判讀內文，將產出的 PDF 自動路由分類至對應的子資料夾。
 * **📁 智慧熱區監控防護 (`watchdog`)**: 背景守護進程可 24 小時監控指定的「熱區 (Hot Folder)」。自動攔截來自掃描器的新檔案，並具備**高階檔案寫入鎖定探測 (File-lock Probing)**，絕對不讀取寫入到一半的破壞檔案。
@@ -34,6 +35,11 @@
 pip install -r requirements.txt
 ```
 
+若您需啟用 **GLM-OCR** 引擎，請額外安裝 PyTorch 與 Transformers 相關依賴：
+```bash
+pip install torch torchvision transformers accelerate sentencepiece Pillow
+```
+
 #### 部署所需模型
 
 本專案執行需依賴轉換後的 `.onnx` 模型：
@@ -51,14 +57,16 @@ python src/gui_main.py
 ## 🚀 操作流程
 
 1. **輸入模式選擇**: 直接將檔案或是資料夾「拖放」進工作佇列；或是在右側面板勾選「啟用背景熱區監控 (Hot Folder)」。
-2. **設定輸出目的地**: 選擇 Searchable PDF 儲存的絕對路徑。
-3. **語意分類 (選項)**: 打開「啟用智能分類」並配置自訂的比對規則 (`rules.json`)。
-4. **一鍵啟動**: 點選「開始轉換」，讓背景的 QWorker 執行緒全速吞吐您的排隊檔案。
+2. **核心與裝置設定**: 從下拉式選單選擇解析引擎（PaddleOCR / GLM-OCR）以及運算裝置（Auto / CPU / GPU）。
+3. **設定輸出目的地**: 選擇 Searchable PDF 儲存的絕對路徑。
+4. **語意分類 (選項)**: 打開「啟用智能分類」並配置自訂的比對規則 (`rules.json`)。
+5. **一鍵啟動**: 點選「開始轉換」，讓背景的 QWorker 執行緒全速吞吐您的排隊檔案。
 
 ## ⚙️ 系統核心架構
 
-* **`hw_detect.py`**: 利用 `ov.Core()` 進行底層探測。由於 Intel GPU 內顯在面對文字偵測不定長的「動態張量」時會頻繁觸發痛苦的 OpenCL 重編譯瓶頸，本引擎已**永久鎖定為 CPU 實體核心並行提供者**，榨出極速定頻效能。
-* **`ocr_engine.py`**: DBNet (四點座標預測) + SVTR_LCNet (CTC 時序解碼)，全數依託於 OpenVINO 運作。
+* **`hw_detect.py`**: 提供系統硬體探測，整合 OpenVINO 之最佳運算裝置回報。
+* **`ocr_engine.py`**: 傳統極速分支：DBNet (四點座標預測) + SVTR_LCNet (CTC 時序解碼)，全數依託於 OpenVINO 運作。
+* **`glm_ocr_engine.py`**: 高精度分支：透過 PyTorch 與 Transformers 載入 `zai-org/GLM-OCR` 大型開源模型進行辨識。
 * **`coord_mapper.py`**: 掌管 Raster Pixel (點陣) 至 Cartesian Points (笛卡爾空間) 的 1:1 幾何映射轉換。
 * **`pdf_writer.py`**: 使用 `fitz.Matrix` 將萃取出的文字作為浮動底層的向量字體，無痕疊加於原始圖紙之上。
 
