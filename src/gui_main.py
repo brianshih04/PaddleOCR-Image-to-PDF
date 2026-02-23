@@ -110,6 +110,15 @@ class ConfigPanel(QGroupBox):
         row1.addWidget(self.out_btn)
         layout.addLayout(row1)
         
+        # OCR Engine Select
+        row_eng = QHBoxLayout()
+        self.engine_lbl = QLabel("核心 OCR 引擎:")
+        self.engine_combo = QComboBox()
+        self.engine_combo.addItems(["PaddleOCR (OpenVINO 離線)", "GLM-OCR (Local/API)"])
+        row_eng.addWidget(self.engine_lbl)
+        row_eng.addWidget(self.engine_combo, 1)
+        layout.addLayout(row_eng)
+        
         # Language Switcher
         row2 = QHBoxLayout()
         self.lang_lbl = QLabel("OCR 語系模型:")
@@ -119,8 +128,16 @@ class ConfigPanel(QGroupBox):
             "japan (日+英)", "korean (韓+英)", "latin (拉丁語系)", "en (純正英文)"
         ])
         
+        self.dev_lbl = QLabel("運算裝置 (Device):")
+        self.dev_combo = QComboBox()
+        self.dev_combo.addItems([
+            "Auto (自動選擇最佳裝置)", "CPU", "GPU (自動選擇顯卡)", "GPU.0 (內顯或第一顯卡)", "GPU.1 (獨顯或第二顯卡)"
+        ])
+        
         row2.addWidget(self.lang_lbl)
         row2.addWidget(self.lang_combo, 1)
+        row2.addWidget(self.dev_lbl)
+        row2.addWidget(self.dev_combo, 1)
         layout.addLayout(row2)
         
         # NLP and UI Features
@@ -231,9 +248,17 @@ class MainWindow(QMainWindow):
         self.config_panel.hf_input.setText(self.settings.value("hot_folder", ""))
         self.config_panel.nlp_chk.setChecked(self.settings.value("enable_nlp", "false") == "true")
         
+        engine_idx = int(self.settings.value("engine_index", 0))
+        if engine_idx < self.config_panel.engine_combo.count():
+            self.config_panel.engine_combo.setCurrentIndex(engine_idx)
+        
         lang_idx = int(self.settings.value("lang_index", 0))
         if lang_idx < self.config_panel.lang_combo.count():
             self.config_panel.lang_combo.setCurrentIndex(lang_idx)
+            
+        dev_idx = int(self.settings.value("dev_index", 0))
+        if dev_idx < self.config_panel.dev_combo.count():
+            self.config_panel.dev_combo.setCurrentIndex(dev_idx)
             
         monitor_on = self.settings.value("monitor_enabled", "false") == "true"
         self.config_panel.monitor_chk.setChecked(monitor_on)
@@ -245,7 +270,9 @@ class MainWindow(QMainWindow):
         self.settings.setValue("output_dir", self.config_panel.out_input.text())
         self.settings.setValue("hot_folder", self.config_panel.hf_input.text())
         self.settings.setValue("enable_nlp", self.config_panel.nlp_chk.isChecked())
+        self.settings.setValue("engine_index", self.config_panel.engine_combo.currentIndex())
         self.settings.setValue("lang_index", self.config_panel.lang_combo.currentIndex())
+        self.settings.setValue("dev_index", self.config_panel.dev_combo.currentIndex())
         self.settings.setValue("monitor_enabled", self.config_panel.monitor_chk.isChecked())
         event.accept()
 
@@ -345,6 +372,7 @@ class MainWindow(QMainWindow):
         self.worker = OCRWorker(
             queue=items,
             output_dir=self.config_panel.out_input.text(),
+            engine_type=self.config_panel.engine_combo.currentText().split(" ")[0],
             lang=lang_str,
             enable_classification=self.config_panel.nlp_chk.isChecked(),
             hot_folder=self.config_panel.hf_input.text(),
@@ -353,7 +381,7 @@ class MainWindow(QMainWindow):
             dict_models_dir=dict_dir,
             nlp_model_dir=nlp_dir,
             rules_path=rules_path,
-            hw_device='CPU', # Hardcoded CPU executor due to Intel GPU dynamic shape bottleneck
+            hw_device=self.config_panel.dev_combo.currentText().split(" ")[0],
             parent=self
         )
         

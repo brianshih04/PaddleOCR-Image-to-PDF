@@ -41,10 +41,10 @@ class PaddleOcrEngine:
     """
     def __init__(self, models_dir: str, device: str = "Auto"):
         self.models_dir = Path(models_dir)
-        if device in ["CPU", "GPU"]:
-            self.device = device
-        else:
+        if device == "Auto":
             self.device = get_optimal_device()
+        else:
+            self.device = device
         self.core = ov.Core()
         
         # Performance properties for OpenVINO (only applicable to CPU)

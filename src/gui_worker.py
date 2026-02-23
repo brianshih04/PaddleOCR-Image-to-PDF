@@ -8,6 +8,7 @@ from PySide6.QtCore import QThread, Signal
 
 from rasterizer import load_data
 from ocr_engine import PaddleOcrEngine
+from glm_ocr_engine import GlmOcrEngine
 from coord_mapper import CoordMapper
 from pdf_writer import PDFReconstructor
 from classifier import DocumentClassifier
@@ -24,7 +25,7 @@ class OCRWorker(QThread):
     progress_updated = Signal(int, int) # Current page, Total pages
     task_finished = Signal(bool)
     
-    def __init__(self, queue: list[str], output_dir: str, lang: str, 
+    def __init__(self, queue: list[str], output_dir: str, engine_type: str, lang: str, 
                  enable_classification: bool, hot_folder: str = None, 
                  det_model: Path = None, rec_models_dir: Path = None, 
                  dict_models_dir: Path = None, nlp_model_dir: Path = None, rules_path: Path = None, 
@@ -32,6 +33,7 @@ class OCRWorker(QThread):
         super().__init__(parent)
         self.queue = queue
         self.output_dir = Path(output_dir) if output_dir else None
+        self.engine_type = engine_type
         self.lang = lang
         self.enable_classification = enable_classification
         self.hot_folder = Path(hot_folder) if hot_folder else None
@@ -56,7 +58,12 @@ class OCRWorker(QThread):
         try:
             # Reconstruct the models_dir structure conceptually
             models_dir = self.det_model.parent if self.det_model else None
-            engine = PaddleOcrEngine(str(models_dir), device=self.hw_device)
+            
+            if "GLM" in self.engine_type:
+                engine = GlmOcrEngine(str(models_dir), device=self.hw_device)
+            else:
+                engine = PaddleOcrEngine(str(models_dir), device=self.hw_device)
+                
             engine.load_recognizer(self.lang)
             
             classifier = None

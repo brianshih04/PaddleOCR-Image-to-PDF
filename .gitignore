@@ -45,3 +45,8 @@ _Error/
 # Build/Runtime logs
 hf_files.txt
 pyinstaller_log.txt
+
+# Ignored binary and large files
+*.exe
+*.whl
+models/

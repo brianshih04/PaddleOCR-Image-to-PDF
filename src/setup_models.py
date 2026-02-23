@@ -37,20 +37,20 @@ def main():
         out_file = base_dir / out_rel_path
         if not out_file.exists():
             download_file(url, out_file)
-            print(f"✅ Saved to {out_file}")
+            print(f"[OK] Saved to {out_file}")
         else:
-            print(f"⏭️  Already exists: {out_file}")
+            print(f"[SKIP] Already exists: {out_file}")
             
     print("\nDownloading dictionaries...")
     for out_rel_path, url in DICTS.items():
         out_file = base_dir / out_rel_path
         if not out_file.exists():
             download_file(url, out_file)
-            print(f"✅ Saved to {out_file}")
+            print(f"[OK] Saved to {out_file}")
         else:
-            print(f"⏭️  Already exists: {out_file}")
+            print(f"[SKIP] Already exists: {out_file}")
             
-    print("\n🎉 OCR Engine models are fully installed and ready!")
+    print("\n[DONE] OCR Engine models are fully installed and ready!")
 
 if __name__ == "__main__":
     main()
